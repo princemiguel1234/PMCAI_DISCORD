@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: pmc-ai-discord-bot
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: DISCORD_TOKEN
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GROQ_MODEL
+        value: openai/gpt-oss-120b
+      - key: TAVILY_API_KEY
+        sync: false
+      - key: DISCORD_GUILD_ID
+        sync: false
+      - key: MEMORY_TTL_MINUTES
+        value: "360"
+      - key: MAX_CONVERSATIONS
+        value: "1000"
