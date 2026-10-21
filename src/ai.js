@@ -1,5 +1,5 @@
 const GROQ_CHAT_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
-const MAX_HISTORY_MESSAGES_IN_PROMPT = 24; // Current user message is the 25th conversation message.
+const MAX_HISTORY_MESSAGES_IN_PROMPT = 49; // Current user message is the 50th conversation message.
 const MAX_HISTORY_ITEM_CHARS = 1600;
 const MAX_CURRENT_MESSAGE_CHARS = 10000;
 const MAX_PROMPT_BUDGET_CHARS = 24000;
