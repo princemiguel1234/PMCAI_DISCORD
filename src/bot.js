@@ -10,7 +10,8 @@ import {
   SlashCommandBuilder,
 } from 'discord.js';
 
-import { generateReply } from './ai.js';
+import { buildSpeakerContext, generateReply } from './ai.js';
+import { prepareAttachments } from './attachments.js';
 import { shouldSearch, searchWeb } from './search.js';
 import { ConversationMemory } from './memory.js';
 import { splitDiscordMessage } from './format.js';
@@ -249,10 +250,22 @@ async function handleMessageCreate(message, context) {
       message.author.id,
     );
 
-    const userText = extractUserText(
+    const messageText = extractUserText(
       message,
       clientUser?.id,
-      isDirectMessage,
+    );
+    const attachmentRoute = await prepareAttachments(
+      message.attachments?.values?.() ?? [],
+    );
+    if (attachmentRoute.ignored && attachmentRoute.reason !== 'unsupported_attachment') {
+      console.warn('[attachments] Attachment validation or download failed; using text-only routing.');
+    }
+    const userText = messageText || (
+      attachmentRoute.kind === 'images'
+        ? 'Please analyze the attached image(s).'
+        : isDirectMessage
+          ? 'The user sent an empty message. Briefly ask what they need help with.'
+          : 'The user mentioned PMC_AI without a text question. Briefly ask how you can help.'
     );
 
     await context.memory.withLock(key, async () => {
@@ -286,6 +299,22 @@ async function handleMessageCreate(message, context) {
           .getHistory(key)
           .slice(-MAX_HISTORY_MESSAGES);
 
+        if (!messageText && attachmentRoute.kind === 'text' && attachmentRoute.ignored) {
+          const reply = attachmentRoute.reason === 'unsupported_attachment'
+            ? 'I can’t analyze video or unsupported attachments. Please send a supported image or include a text question.'
+            : attachmentRoute.reason === 'attachment_limit'
+              ? 'The image attachment exceeds supported limits. Please send a smaller image or include a text question.'
+              : 'I couldn’t access or validate the image attachment. Please try uploading it again or include a text question.';
+          const replyIds = await sendResponse(message, reply);
+          context.memory.addExchange(key, {
+            userContent: '[Unsupported attachment; no text provided]',
+            assistantContent: reply,
+            userMessageId: message.id,
+            assistantMessageIds: replyIds,
+          });
+          return;
+        }
+
         const requestSearch = shouldSearch(userText);
 
         let searchResult = null;
@@ -311,6 +340,12 @@ async function handleMessageCreate(message, context) {
 
         const reply = await generateReply({
           userText,
+          model: attachmentRoute.model,
+          speakerContext: buildSpeakerContext(message),
+          images: attachmentRoute.images,
+          attachmentNote: attachmentRoute.ignored
+            ? 'Attachments were ignored and were not analyzed. Answer using only the user’s text, and do not claim to have inspected any attachment.'
+            : '',
           history,
           mode,
           searchResult,
@@ -321,7 +356,10 @@ async function handleMessageCreate(message, context) {
         const replyIds = await sendResponse(message, reply);
 
         context.memory.addExchange(key, {
-          userContent: userText,
+          userContent: [
+            messageText || (attachmentRoute.kind === 'images' ? '[Image attachment(s) provided]' : userText),
+            attachmentRoute.ignored ? '[Attachments ignored]' : '',
+          ].filter(Boolean).join('\n'),
           assistantContent: reply,
           userMessageId: message.id,
           assistantMessageIds: replyIds,
@@ -476,7 +514,6 @@ async function handleMessageUpdate(
     const updatedText = extractUserText(
       newMessage,
       client.user?.id,
-      isDirectMessage,
     );
 
     await memory.withLock(key, async () => {
@@ -514,7 +551,7 @@ function conversationKey(channelId, userId) {
     : `user:${userId}`;
 }
 
-function extractUserText(message, botUserId, isDirectMessage) {
+function extractUserText(message, botUserId) {
   let content = String(message.content ?? '');
 
   if (botUserId) {
@@ -527,30 +564,6 @@ function extractUserText(message, botUserId, isDirectMessage) {
   }
 
   content = content.replace(/[ \t]+\n/g, '\n').trim();
-
-  const attachments = [
-    ...(message.attachments?.values?.() ?? []),
-  ]
-    .slice(0, 5)
-    .map((attachment) => {
-      const name = String(
-        attachment.name ?? 'attachment',
-      ).slice(0, 120);
-
-      const url = String(attachment.url ?? '').slice(0, 500);
-
-      return `[Attachment: ${name}${url ? ` — ${url}` : ''}]`;
-    });
-
-  if (attachments.length) {
-    content = `${content}${content ? '\n' : ''}${attachments.join('\n')}`;
-  }
-
-  if (!content) {
-    return isDirectMessage
-      ? 'The user sent an empty message. Briefly ask what they need help with.'
-      : 'The user mentioned PMC_AI without a text question. Briefly ask how you can help.';
-  }
 
   return content.slice(0, MAX_USER_MESSAGE_LENGTH);
 }

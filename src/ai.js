@@ -1,7 +1,7 @@
 const GROQ_CHAT_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
 const MAX_HISTORY_MESSAGES_IN_PROMPT = 24; // Current user message is the 25th conversation message.
 const MAX_HISTORY_ITEM_CHARS = 1600;
-const MAX_CURRENT_MESSAGE_CHARS = 4000;
+const MAX_CURRENT_MESSAGE_CHARS = 10000;
 const MAX_PROMPT_BUDGET_CHARS = 24000;
 const MAX_OUTPUT_TOKENS = 1100;
 
@@ -34,22 +34,52 @@ HUMAN-LIKE: Warm, natural conversation; remain transparent about being AI when r
 
 Follow the active style mode without sacrificing accuracy or helpfulness.`;
 
+export function buildSpeakerContext(message) {
+  const username = message.author?.username ?? 'unknown';
+  const displayName = message.member?.displayName ??
+    message.author?.globalName ??
+    username;
+  const identity = {
+    username,
+    displayName,
+    userId: message.author?.id ?? 'unknown',
+    server: message.guild?.name ?? 'Direct message',
+    serverId: message.guildId ?? null,
+    channel: message.channel?.name ?? 'Direct message',
+    channelId: message.channelId ?? 'unknown',
+  };
+
+  return [
+    '[DISCORD MESSAGE CONTEXT]',
+    `The speaker is the human Discord user, not PMC_AI. Identity and location metadata: ${JSON.stringify(identity)}`,
+    'The following message text and image content come from this user. Do not attribute them to PMC_AI or another participant.',
+  ].join('\n');
+}
+
 export async function generateReply({
   userText,
+  speakerContext = '',
+  images = [],
+  attachmentNote = '',
+  model = 'openai/gpt-oss-120b',
   history = [],
   mode = 'human',
   searchResult = null,
   searchWasRequested = false,
   config,
 }) {
-  const model = config.groqModel || 'openai/gpt-oss-120b';
   const messages = [{
     role: 'system',
     content: BASE_SYSTEM_PROMPT + (mode === 'robot' ? ROBOT_STYLE_PROMPT : HUMAN_STYLE_PROMPT),
   }];
 
   const referenceBlock = buildSearchReferenceBlock(searchResult, searchWasRequested);
-  const currentText = limitText(userText, MAX_CURRENT_MESSAGE_CHARS);
+  const currentText = limitText(
+    [speakerContext, attachmentNote && `[ATTACHMENT STATUS]\n${attachmentNote}`, userText]
+      .filter(Boolean)
+      .join('\n\n'),
+    MAX_CURRENT_MESSAGE_CHARS,
+  );
   const currentContent = referenceBlock
     ? `${currentText}\n\n${referenceBlock}`
     : currentText;
@@ -59,7 +89,16 @@ export async function generateReply({
     role,
     content: limitText(content, MAX_HISTORY_ITEM_CHARS),
   })));
-  messages.push({ role: 'user', content: currentContent });
+  const userContent = Array.isArray(images) && images.length
+    ? [
+        { type: 'text', text: currentContent },
+        ...images.map(({ dataUrl }) => ({
+          type: 'image_url',
+          image_url: { url: dataUrl },
+        })),
+      ]
+    : currentContent;
+  messages.push({ role: 'user', content: userContent });
 
   const requestBody = {
     model,

@@ -5,20 +5,22 @@ PMC_AI is a Node.js ES-module Discord bot that uses Groq's `openai/gpt-oss-120b`
 ## Features
 
 - Replies to messages that mention `@PMC_AI` in servers and responds to direct messages.
-- Uses Groq Chat Completions at `https://api.groq.com/openai/v1/chat/completions`.
+- Uses `openai/gpt-oss-120b` for text and `qwen/qwen3.8-27b` for supported image attachments through Groq Chat Completions at `https://api.groq.com/openai/v1/chat/completions`.
+- Adds the speaking Discord user's username, display name, user ID, server/channel context, and actual message text to each AI request. Per-user/per-channel conversation history remains isolated.
+- Downloads and validates up to five supported Discord PNG, JPEG, GIF, and WebP attachments (14 MiB total) before sending their actual image bytes to the vision model. Video and unsupported attachments are ignored; mixed supported/unsupported attachments use text-only routing.
 - Searches Tavily only for explicit research/search requests and likely time-sensitive or changing information.
 - Stores at most 25 user/assistant messages per channel conversation, including no more than the last 24 old messages plus the current user message in a model request.
 - Serializes processing for each channel to prevent concurrent requests from racing the same history.
 - Supports `/ping`, `/clear`, `/help`, and `/mode`; slash commands register automatically when the bot connects.
 - Also understands “act like a robot” and “human mode” in a message directed to the bot.
-- Handles message edits/deletions when the message is represented in the local history, attachment links as text metadata, typing indicators, long Discord replies, HTTP timeouts, temporary Groq failures, memory cleanup, and graceful shutdown.
+- Handles message edits/deletions when the message is represented in the local history, typing indicators, long Discord replies, HTTP timeouts, temporary Groq failures, memory cleanup, and graceful shutdown.
 - Uses no database or disk-based conversation storage. History and speaking mode reset on restart/redeploy/sleep.
 
 ## Requirements
 
 - Node.js 20.11 or newer (Render selects a supported Node runtime from `package.json`).
 - A Discord application/bot token.
-- A Groq API key with access to `openai/gpt-oss-120b`.
+- A Groq API key with access to `openai/gpt-oss-120b` and `qwen/qwen3.8-27b` for image requests.
 - A Tavily API key.
 - A GitHub account connected to Render.
 
@@ -38,7 +40,7 @@ Direct messages use the bot's normal DM access. The bot never answers its own me
 - **Groq:** create an API key at [Groq Console → API Keys](https://console.groq.com/keys).
 - **Tavily:** create an API key at [Tavily](https://app.tavily.com/).
 
-The model defaults to `openai/gpt-oss-120b`. You can override it with `GROQ_MODEL`, but it does not silently fall back to another model.
+Text-only requests use `openai/gpt-oss-120b`; supported-image requests use `qwen/qwen3.8-27b`. `GROQ_MODEL` remains in the environment configuration for compatibility, but attachment routing deliberately uses these exact model IDs.
 
 ## 3. Local setup (optional)
 
@@ -75,7 +77,7 @@ npm run check
 5. Add these environment variables in Render:
    - `DISCORD_TOKEN` — the bot token from Discord
    - `GROQ_API_KEY` — the Groq key
-   - `GROQ_MODEL` — `openai/gpt-oss-120b`
+   - `GROQ_MODEL` — retained for configuration compatibility; routing uses the exact model IDs above
    - `TAVILY_API_KEY` — the Tavily key
    - `MEMORY_TTL_MINUTES` — optional, defaults to `360`
    - `MAX_CONVERSATIONS` — optional, defaults to `1000`
@@ -102,7 +104,7 @@ A `render.yaml` Blueprint is included with the build/start commands, health path
 |---|---:|---|
 | `DISCORD_TOKEN` | Yes | Discord bot token |
 | `GROQ_API_KEY` | Yes | Groq API key |
-| `GROQ_MODEL` | No | `openai/gpt-oss-120b` |
+| `GROQ_MODEL` | No | Retained for compatibility; exact text/image model routing is used |
 | `TAVILY_API_KEY` | Yes | Tavily API key |
 | `DISCORD_GUILD_ID` | No | Restricts slash-command registration to a test server for fast updates |
 | `PORT` | No | Render supplies this; local default is `10000` |
@@ -115,7 +117,7 @@ A `render.yaml` Blueprint is included with the build/start commands, health path
 
 - Memory is process-local and temporary, not permanent storage. A restart, deploy, instance sleep, or crash resets conversation history and per-conversation speaking mode.
 - Each channel/thread/DM is a separate conversation. The prompt includes at most 24 previous messages plus the current request, with additional character limits. The stored history counts user and assistant messages separately and is capped at 25.
-- Message-edit and message-delete events update/remove matching local history when Discord supplies enough message metadata. Attachments are represented by their names and URLs; PMC_AI does not claim it has visually inspected files merely because a link was present.
+- Message-edit and message-delete events update/remove matching local history when Discord supplies enough message metadata. Validated image bytes are sent to the vision model for the current request only; image bytes are not retained in conversation memory. Video and unsupported files are not uploaded to Groq.
 - The `/health` endpoint confirms only that the HTTP process is responding. It does not call Discord, Groq, or Tavily.
 - API keys never go into source code or logs. Search result text is treated as untrusted data, and the bot does not execute code or arbitrary tools from messages or webpages.
 
@@ -151,5 +153,6 @@ Render Free Web Services can spin down after 15 minutes without inbound traffic,
 │   ├── memory.js
 │   └── search.js
 └── test/
+    ├── attachments.test.js
     └── memory.test.js
 ```
