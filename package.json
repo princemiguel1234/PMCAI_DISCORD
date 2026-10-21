@@ -8,7 +8,7 @@
   "scripts": {
     "start": "node index.js",
     "test": "node --test",
-    "check": "node --check index.js && node --check src/config.js && node --check src/bot.js && node --check src/ai.js && node --check src/attachments.js && node --check src/search.js && node --check src/memory.js && node --check src/format.js"
+    "check": "node --check index.js && node --check src/config.js && node --check src/bot.js && node --check src/ai.js && node --check src/attachments.js && node --check src/search.js && node --check src/memory.js && node --check src/format.js && node --check test/ai.test.js && node --check test/attachments.test.js && node --check test/config.test.js && node --check test/format.test.js && node --check test/memory.test.js && node --check test/search-service.test.js && node --check test/search.test.js"
   },
   "engines": {
     "node": ">=20.11.0"

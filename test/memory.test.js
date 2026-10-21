@@ -53,6 +53,24 @@ test('serializes queued work in order for the same conversation', async () => {
   }
 });
 
+test('releases a conversation lock after a task fails', async () => {
+  const memory = makeMemory();
+  try {
+    await assert.rejects(
+      memory.withLock('channel:1', async () => {
+        throw new Error('turn failed');
+      }),
+      /turn failed/,
+    );
+
+    const result = await memory.withLock('channel:1', async () => 'next turn');
+    assert.equal(result, 'next turn');
+    assert.equal(memory.locks.size, 0);
+  } finally {
+    memory.stop();
+  }
+});
+
 test('editing a user message removes its outdated assistant response', () => {
   const memory = makeMemory();
   try {

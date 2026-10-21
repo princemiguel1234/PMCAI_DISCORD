@@ -21,7 +21,7 @@ PMC_AI is a Node.js ES-module Discord bot that uses Groq's `openai/gpt-oss-120b`
 - Node.js 20.11 or newer (Render selects a supported Node runtime from `package.json`).
 - A Discord application/bot token.
 - A Groq API key with access to `openai/gpt-oss-120b` and `qwen/qwen3.8-27b` for image requests.
-- A Tavily API key.
+- A Tavily API key (optional; without one, search requests are answered without claiming fresh verification).
 - A GitHub account connected to Render.
 
 ## 1. Create the Discord bot
@@ -49,7 +49,7 @@ npm install
 cp .env.example .env
 ```
 
-Edit `.env` and fill in `DISCORD_TOKEN`, `GROQ_API_KEY`, and `TAVILY_API_KEY`. Never commit `.env` or share screenshots containing secrets.
+Edit `.env` and fill in `DISCORD_TOKEN` and `GROQ_API_KEY`; `TAVILY_API_KEY` is optional. Never commit `.env` or share screenshots containing secrets.
 
 Start it with:
 
@@ -78,7 +78,7 @@ npm run check
    - `DISCORD_TOKEN` — the bot token from Discord
    - `GROQ_API_KEY` — the Groq key
    - `GROQ_MODEL` — retained for configuration compatibility; routing uses the exact model IDs above
-   - `TAVILY_API_KEY` — the Tavily key
+   - `TAVILY_API_KEY` — optional Tavily key for web search
    - `MEMORY_TTL_MINUTES` — optional, defaults to `360`
    - `MAX_CONVERSATIONS` — optional, defaults to `1000`
 6. Optional during setup: set `DISCORD_GUILD_ID` to your test server's ID. PMC_AI registers commands in that one server, where they appear quickly. Remove the variable when you want globally registered slash commands; global propagation can take time. The code registers commands automatically at startup.
@@ -105,7 +105,7 @@ A `render.yaml` Blueprint is included with the build/start commands, health path
 | `DISCORD_TOKEN` | Yes | Discord bot token |
 | `GROQ_API_KEY` | Yes | Groq API key |
 | `GROQ_MODEL` | No | Retained for compatibility; exact text/image model routing is used |
-| `TAVILY_API_KEY` | Yes | Tavily API key |
+| `TAVILY_API_KEY` | No | Tavily API key; search is skipped safely if missing |
 | `DISCORD_GUILD_ID` | No | Restricts slash-command registration to a test server for fast updates |
 | `PORT` | No | Render supplies this; local default is `10000` |
 | `GROQ_TIMEOUT_MS` | No | `45000` |
@@ -147,12 +147,18 @@ Render Free Web Services can spin down after 15 minutes without inbound traffic,
 ├── README.md
 ├── src/
 │   ├── ai.js
+│   ├── attachments.js
 │   ├── bot.js
 │   ├── config.js
 │   ├── format.js
 │   ├── memory.js
 │   └── search.js
 └── test/
+    ├── ai.test.js
     ├── attachments.test.js
-    └── memory.test.js
+    ├── config.test.js
+    ├── format.test.js
+    ├── memory.test.js
+    ├── search-service.test.js
+    └── search.test.js
 ```

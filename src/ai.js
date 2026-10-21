@@ -34,6 +34,9 @@ HUMAN-LIKE: Warm, natural conversation; remain transparent about being AI when r
 
 Follow the active style mode without sacrificing accuracy or helpfulness.`;
 
+const ROBOT_STYLE_PROMPT = '\n\nActive style mode: ROBOT. Use precise, structured, mechanical wording and occasional status phrases, without claiming to be a physical robot.';
+const HUMAN_STYLE_PROMPT = '\n\nActive style mode: HUMAN-LIKE. Use warm, natural conversational wording and remain transparent about being AI when relevant.';
+
 export function buildSpeakerContext(message) {
   const username = message.author?.username ?? 'unknown';
   const displayName = message.member?.displayName ??
@@ -68,9 +71,12 @@ export async function generateReply({
   searchWasRequested = false,
   config,
 }) {
+  const stylePrompt = mode === 'robot'
+    ? ROBOT_STYLE_PROMPT
+    : HUMAN_STYLE_PROMPT;
   const messages = [{
     role: 'system',
-    content: BASE_SYSTEM_PROMPT + (mode === 'robot' ? ROBOT_STYLE_PROMPT : HUMAN_STYLE_PROMPT),
+    content: BASE_SYSTEM_PROMPT + stylePrompt,
   }];
 
   const referenceBlock = buildSearchReferenceBlock(searchResult, searchWasRequested);
@@ -212,8 +218,11 @@ async function createChatCompletion(body, config) {
 function parseRetryAfter(value) {
   if (!value) return null;
   const seconds = Number.parseFloat(value);
-  if (!Number.isFinite(seconds)) return null;
-  return Math.max(200, Math.min(2000, seconds * 1000));
+  const delayMs = Number.isFinite(seconds)
+    ? seconds * 1000
+    : Date.parse(value) - Date.now();
+  if (!Number.isFinite(delayMs)) return null;
+  return Math.max(200, Math.min(2000, delayMs));
 }
 
 function delay(ms) {

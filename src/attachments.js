@@ -86,7 +86,10 @@ function classifyAttachment(attachment) {
   const extensionType = IMAGE_EXTENSIONS.get(extension);
   if (
     contentType &&
-    (!IMAGE_TYPES.has(contentType) || (extensionType && extensionType !== contentType))
+    (
+      !IMAGE_TYPES.has(contentType) ||
+      (extension && (!extensionType || extensionType !== contentType))
+    )
   ) {
     return 'unsupported';
   }
@@ -105,7 +108,10 @@ async function downloadImage(attachment, fetchImpl) {
   timer.unref?.();
 
   try {
-    const response = await fetchImpl(url, { signal: controller.signal });
+    const response = await fetchImpl(url, {
+      signal: controller.signal,
+      redirect: 'error',
+    });
     if (!response.ok || !response.body) throw new Error('Attachment download failed.');
 
     const responseType = String(response.headers.get('content-type') ?? '')

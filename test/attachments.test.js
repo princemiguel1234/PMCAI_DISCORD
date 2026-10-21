@@ -64,6 +64,15 @@ test('invalid or inaccessible images fall back to text-only routing', async () =
   assert.equal(unavailable.model, 'openai/gpt-oss-120b');
   assert.equal(unavailable.ignored, true);
   assert.deepEqual(unavailable.images, []);
+
+  const invalidContents = await prepareAttachments([imageAttachment()], async () => (
+    new Response(Buffer.from('not an image'), {
+      headers: { 'content-type': 'image/png' },
+    })
+  ));
+  assert.equal(invalidContents.model, 'openai/gpt-oss-120b');
+  assert.equal(invalidContents.reason, 'invalid_or_unavailable_image');
+  assert.deepEqual(invalidContents.images, []);
 });
 
 test('does not download an image when an unsupported attachment is also present', async () => {
@@ -105,24 +114,6 @@ test('generates text-only and image requests using their selected models and spe
       images: [{ dataUrl: `data:image/png;base64,${pngBytes.toString('base64')}` }],
     });
 
-    test('builds identity and server/channel context from the triggering Discord author', () => {
-      const context = buildSpeakerContext({
-        author: { username: 'alice', globalName: 'Alice A.', id: 'user-42' },
-        member: { displayName: 'Alice in Server' },
-        guild: { name: 'PMC Server' },
-        guildId: 'guild-7',
-        channel: { name: 'general' },
-        channelId: 'channel-9',
-      });
-
-      assert.match(context, /"username":"alice"/);
-      assert.match(context, /"displayName":"Alice in Server"/);
-      assert.match(context, /"userId":"user-42"/);
-      assert.match(context, /"server":"PMC Server"/);
-      assert.match(context, /"channel":"general"/);
-      assert.match(context, /human Discord user, not PMC_AI/);
-    });
-
     const textBody = requests[0];
     assert.equal(textBody.model, 'openai/gpt-oss-120b');
     assert.equal(typeof textBody.messages.at(-1).content, 'string');
@@ -138,4 +129,22 @@ test('generates text-only and image requests using their selected models and spe
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test('builds identity and server/channel context from the triggering Discord author', () => {
+  const context = buildSpeakerContext({
+    author: { username: 'alice', globalName: 'Alice A.', id: 'user-42' },
+    member: { displayName: 'Alice in Server' },
+    guild: { name: 'PMC Server' },
+    guildId: 'guild-7',
+    channel: { name: 'general' },
+    channelId: 'channel-9',
+  });
+
+  assert.match(context, /"username":"alice"/);
+  assert.match(context, /"displayName":"Alice in Server"/);
+  assert.match(context, /"userId":"user-42"/);
+  assert.match(context, /"server":"PMC Server"/);
+  assert.match(context, /"channel":"general"/);
+  assert.match(context, /human Discord user, not PMC_AI/);
 });

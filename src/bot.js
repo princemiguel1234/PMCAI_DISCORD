@@ -226,7 +226,7 @@ async function registerSlashCommands(client, config) {
 
 async function handleMessageCreate(message, context) {
   try {
-    if (!message || message.author?.bot) return;
+    if (!message || !message.author?.id || message.author.bot) return;
 
     if (
       !message.channel ||
@@ -254,25 +254,12 @@ async function handleMessageCreate(message, context) {
       message,
       clientUser?.id,
     );
-    const attachmentRoute = await prepareAttachments(
-      message.attachments?.values?.() ?? [],
-    );
-    if (attachmentRoute.ignored && attachmentRoute.reason !== 'unsupported_attachment') {
-      console.warn('[attachments] Attachment validation or download failed; using text-only routing.');
-    }
-    const userText = messageText || (
-      attachmentRoute.kind === 'images'
-        ? 'Please analyze the attached image(s).'
-        : isDirectMessage
-          ? 'The user sent an empty message. Briefly ask what they need help with.'
-          : 'The user mentioned PMC_AI without a text question. Briefly ask how you can help.'
-    );
 
     await context.memory.withLock(key, async () => {
       const stopTyping = startTyping(message.channel);
 
       try {
-        const modeChange = detectModeChange(userText);
+        const modeChange = detectModeChange(messageText);
 
         if (modeChange) {
           context.memory.setMode(key, modeChange);
@@ -284,7 +271,7 @@ async function handleMessageCreate(message, context) {
           const replyIds = await sendResponse(message, reply);
 
           context.memory.addExchange(key, {
-            userContent: userText,
+            userContent: messageText,
             assistantContent: reply,
             userMessageId: message.id,
             assistantMessageIds: replyIds,
@@ -292,6 +279,20 @@ async function handleMessageCreate(message, context) {
 
           return;
         }
+
+        const attachmentRoute = await prepareAttachments(
+          message.attachments?.values?.() ?? [],
+        );
+        if (attachmentRoute.ignored && attachmentRoute.reason !== 'unsupported_attachment') {
+          console.warn('[attachments] Attachment validation or download failed; using text-only routing.');
+        }
+        const userText = messageText || (
+          attachmentRoute.kind === 'images'
+            ? 'Please analyze the attached image(s).'
+            : isDirectMessage
+              ? 'The user sent an empty message. Briefly ask what they need help with.'
+              : 'The user mentioned PMC_AI without a text question. Briefly ask how you can help.'
+        );
 
         const mode = context.memory.getMode(key);
 
@@ -368,14 +369,16 @@ async function handleMessageCreate(message, context) {
         console.error('[bot] Message processing failed.');
         logError('[bot] Details', error);
 
-        try {
-          await message.reply({
-            content:
-              'I hit a temporary AI service issue. Please try again in a moment.',
-            allowedMentions: { parse: [] },
-          });
-        } catch (sendError) {
-          logError('[discord] Could not send error reply', sendError);
+        if (!error?.responseStarted) {
+          try {
+            await message.reply({
+              content:
+                'I hit a temporary AI service issue. Please try again in a moment.',
+              allowedMentions: { parse: [] },
+            });
+          } catch (sendError) {
+            logError('[discord] Could not send error reply', sendError);
+          }
         }
       } finally {
         stopTyping();
@@ -601,24 +604,30 @@ async function sendResponse(message, text) {
   }
 
   const ids = [];
-
-  const first = await message.reply({
-    content: chunks[0],
-    allowedMentions: { parse: [] },
-  });
-
-  ids.push(first.id);
-
-  for (const chunk of chunks.slice(1)) {
-    const sent = await message.channel.send({
-      content: chunk,
+  try {
+    const first = await message.reply({
+      content: chunks[0],
       allowedMentions: { parse: [] },
     });
 
-    ids.push(sent.id);
-  }
+    ids.push(first.id);
 
-  return ids;
+    for (const chunk of chunks.slice(1)) {
+      const sent = await message.channel.send({
+        content: chunk,
+        allowedMentions: { parse: [] },
+      });
+
+      ids.push(sent.id);
+    }
+
+    return ids;
+  } catch (error) {
+    if (ids.length && error && typeof error === 'object') {
+      error.responseStarted = true;
+    }
+    throw error;
+  }
 }
 
 function helpText() {
